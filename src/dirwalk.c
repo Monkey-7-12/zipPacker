@@ -25,23 +25,11 @@
 	#include <sys/syslimits.h>
 #endif
 
-int is_regular_file(const char *path)
-{
-    struct stat path_stat;
-    stat(path, &path_stat);
-    return S_ISREG(path_stat.st_mode);
-}
-
-int is_dir(const char *path) {
-   struct stat statbuf;
-   if (stat(path, &statbuf) != 0)
-       return 0;
-   return S_ISDIR(statbuf.st_mode);
-}
 
 void dir_walker(char* name, void (*f_callback)(), void (*d_callback)()) {
 	DIR *dir;
 	struct dirent *entry;
+	struct stat statbuf;
 	char path[PATH_MAX];
 
 	if (!(dir = opendir(name))) {
@@ -50,20 +38,24 @@ void dir_walker(char* name, void (*f_callback)(), void (*d_callback)()) {
 	}
 
 	while ((entry = readdir(dir)) != NULL) {
-		// DT_DIR work only with Btrfs, ext2, ext3 und ext4
-		if (entry->d_type == DT_UNKNOWN) {
-			if (is_dir(entry->d_name)) entry->d_type = DT_DIR;
-		}
+		snprintf(path, PATH_MAX, "%s/%s", name, entry->d_name);
 
-		if (entry->d_type == DT_DIR) {
+		//printf(">>%s\n", entry->d_name);
+		if (stat(path, &statbuf) != 0)
+		{
+			// FIXME
+			continue;
+		}
+		
+		if (S_ISDIR(statbuf.st_mode)) {
 			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 				continue;
-			snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
-			if (d_callback != NULL) (*d_callback)(path);
+			//snprintf(path, PATH_MAX, "%s/%s", name, entry->d_name);
+			if (d_callback != NULL) (*d_callback)(path, statbuf.st_mode, statbuf.st_size);
 			dir_walker(path, f_callback, d_callback);
 		} else {
-			snprintf(path, sizeof(path), "%s/%s", name, entry->d_name);
-			if (f_callback != NULL) (*f_callback)(path);
+			//snprintf(path, PATH_MAX, "%s/%s", name, entry->d_name);
+			if (f_callback != NULL) (*f_callback)(path, statbuf.st_mode, statbuf.st_size);
 		}
 	}
 	closedir(dir);

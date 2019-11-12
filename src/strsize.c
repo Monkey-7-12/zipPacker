@@ -38,7 +38,7 @@ char *size2str(uint64_t bytes, int precision)
 	double _bytes = bytes;
     int i = 0;
 
-	while (_bytes > 1024 && i < sfx_count-1) {
+	while (_bytes >= 1024 && i < sfx_count-1) {
 		i++;
 		_bytes /= 1024.0;
 	}

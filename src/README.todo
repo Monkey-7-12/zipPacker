@@ -1,8 +1,0 @@
-TODO:
-
-test PATH_MAX for libzip
-
-array of files = struct { fname, type, size }
-  call stat() direct in dir_walker..
-
-

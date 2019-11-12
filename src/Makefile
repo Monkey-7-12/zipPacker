@@ -10,13 +10,22 @@
 #  https://creativecommons.org/licenses/by/4.0/deed.de
 
 CC	  	= cc
-#CFLAGS  = -x c -Wall
-CFLAGS  = -x c -Wall -ggdb
-LDFLAGS = -lzip -lm
-#LDFLAGS = -lzip
+CFLAGS  = -x c  -Wall -pthread
+LDFLAGS = -lzip -lm -lpthread
 
-OBJ = fsize.o dirwalk.o strsize.o main.o
+
+
+OBJ = fbuffer.o dirwalk.o strsize.o main.o
 BIN = zipPacker
+
+ifeq ($(DEBUG),1)
+	CFLAGS += -DDEBUG -ggdb
+endif
+
+ifeq ($(shell uname -s),Darwin)
+	OBJ += 
+endif
+
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
@@ -29,7 +38,8 @@ all: $(OBJ)
 
 
 clean:
-	rm -rf $(BIN) $(OBJ)
-	rm -rd *~
+	- rm -rf $(BIN) $(OBJ)
+	- rm -rd *~
+
 
 # vim: ts=4:sw=4:
