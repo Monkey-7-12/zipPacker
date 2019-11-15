@@ -1,0 +1,20 @@
+#
+# 
+# Linux:
+#   cd /media/T3/
+# Mac:
+#   cd /Volumes/T3/
+#
+
+(cd ./zipPacker/src/; make DEBUG=1 clean all)
+rm -rf test_out
+mkdir test_out
+./zipPacker/src/zipPacker -s 20M -o test_out/test_%03d.zip test.src.files 2>test_out/test.out
+
+rm -rf test_out.unzipped
+mkdir test_out.unzipped
+(cd test_out.unzipped; for f in ../test_out/test_*.zip; do unzip -q $f; done;)
+diff -r test.src.files test_out.unzipped
+
+
+ 
