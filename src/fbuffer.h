@@ -23,16 +23,15 @@ typedef struct fBuffer_t {
 	char 	*path;		/* File/Path name */
 	mode_t	st_mode; 	/* File type and mode */
 	off_t	st_size;	/* Total size, in bytes */
+	void 	*_next;		/* Ptr to next entry */
 } fBuffer_t;
 
 
 extern fBuffer_len_t fbuffer_len(fBuffer_t *p);
-extern fBuffer_t *fbuffer_new(fBuffer_len_t count);
+extern fBuffer_t *fbuffer_new();
+extern fBuffer_t *fbuffer_append(fBuffer_t *p_last);
+extern fBuffer_t *fbuffer_insert(fBuffer_t *p);
 extern void fbuffer_free(fBuffer_t *p);
-extern void fbuffer_clear(fBuffer_t *p);
-extern fBuffer_t *fbuffer_dup(fBuffer_t *p);
-
-
 
 #endif /* FBUFFER_H */
 

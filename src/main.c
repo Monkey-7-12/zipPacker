@@ -36,20 +36,20 @@
 
 #define SLEEP_TIME           2		// Wait n seconds for thread response
 #define MAX_THREADS          4		// Default max threads
-#define MAX_FILES       102400		// Default max files per zip
 #define MAX_SIZE    1073741824 		// Default max size per zip 
 
 
-static int  max_files = MAX_FILES;	// Max files per zip file
-static long max_size  = MAX_SIZE;	// Max size per zip file
+static int      max_files = 0;			// Max files per zip file
+static uint64_t max_size  = MAX_SIZE;	// Max size per zip file
 
 /* zip name control */
 static long depth_len = 0;		  	// count character do delete from input filename
 static char *zip_filename = NULL;	// output filename (format mask)
 
 /* working ....... */
-static int zipfile_idx = 0;		 // index for zipfile name _0001, _0002 ... ... ...
-static  uint64_t total_size = 0;	// total size for found files	
+static int      zipfile_idx = 0;	// index for zipfile name _0001, _0002 ... ... ...
+static int	    total_files = 0;	// total files found
+static uint64_t total_size = 0;		// total size for found files	
 
 /* thread control */
 // FIXME / TODO : mutex
@@ -58,108 +58,11 @@ struct thread_args {
 	char zipfile[PATH_MAX+1];		// zip filename
 };
 static int max_threads = MAX_THREADS;
-static pthread_t *threads;		  // array of thread id's --- TODO: "replace/control" with mutex
+static pthread_t *threads;		  	// array of thread id's --- TODO: "replace/control" with mutex
 
 /* fBuffer */
-#define FBUFFER_SIZE max_files * sizeof(fBuffer_t)
-static fBuffer_t *fBuffer;			// array of files
-static fBuffer_t *fBuffer_next;		// pointer to next-free entry
-
-
-
-
-
-struct cleanup_handler_args {
-	pthread_t 	thread_id;	
-	fBuffer_t 	*array;
-};
-static void pt_cleanup_handler(void *p) {
-	struct cleanup_handler_args *args = (struct cleanup_handler_args *)p;
-	#ifdef DEBUG
-		printf("  >>> exit_thread(%ld, ...)\n", (long)args->thread_id);
-	#endif /* DEBUG */
-	fbuffer_free(args->array);
-}
-
-void* pt_zipper(void *p) {
-	struct thread_args *args = (struct thread_args *)p;
-	
-	struct cleanup_handler_args cleanup_args;
-	cleanup_args.array = args->array;
-	cleanup_args.thread_id = pthread_self();
-    pthread_cleanup_push(pt_cleanup_handler, &cleanup_args);
-	
-	int error;
-	zip_t *zip = zip_open(args->zipfile, ZIP_CREATE | ZIP_EXCL, &error);
-	if (zip == NULL) {
-		zip_error_t ziperror;
-		zip_error_init_with_code(&ziperror, error);
-		fprintf(stderr, "Failed to open output file %s: %s\n", args->zipfile, zip_error_strerror(&ziperror));
-		exit(3);
-	}
-
-	char *name;
-	zip_int64_t id;
-	fBuffer_len_t len = fbuffer_len(args->array);
-	fBuffer_t *p;
-	//for (static fBuffer_t *p = args->array; *p != NULL; p++) {
-	for (fBuffer_len_t idx=0; idx < len && args->array[idx].path != NULL; idx++) {
-		p = &args->array[idx];
-		name = &p->path[depth_len];
-
-		/* add directory... */
-		if (S_ISDIR(p->st_mode)) {
-			id = zip_dir_add(zip, name, ZIP_FL_ENC_UTF_8);
-			if (id < 0) {
-				fprintf(stderr, "Failed to add directory %s to zip: %s\n", name, zip_strerror(zip));
-				exit(4);
-			}
-			continue;
-	   	}	
-			
-		/* add file... */
-		#ifdef DEBUG
-			fprintf(stderr, "DEBUG: zip: %s, file: %s\n", args->zipfile, p->path);
-		#endif /* DEBUG */
-		zip_source_t *source = zip_source_file(zip, p->path, 0, 0);
-		if (source == NULL) {
-			fprintf(stderr, "Failed to open file %s: %s\n", p->path, zip_strerror(zip));
-			exit(3);
-		}
-
-		if (name[0] == '/') name++;
-		id = zip_file_add(zip, name, source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8); 
-		if (id < 0) {
-			zip_source_free(source);
-			fprintf(stderr, "Failed to add file %s to zip: %s\n", name, zip_strerror(zip));
-			exit(4);
-		} 
-
-
-		if (zip_set_file_compression(zip, id, ZIP_CM_STORE, 0) < 0) {
-			fprintf(stderr, "Failed to set compressions flag for file %s: %s\n", name, zip_strerror(zip));
-			exit(5);
-		}
-	}
-	if (zip_close(zip) < 0) {
-		zip_error_t *ziperror = zip_get_error(zip);
-		fprintf(stderr, "Failed to write output file %s: %s\n", args->zipfile, zip_error_strerror(ziperror));
-		exit(1);
-	}
-
-
-	pthread_exit(NULL);
-	pthread_cleanup_pop(1);
-	return NULL;
-}
-
-
-
-
-
-
-
-
+static fBuffer_t *pfBuffer;			// pointer to start of array of files
+static fBuffer_t *pfBuffer_last;	// pointer to last entry
 
 
 
@@ -184,27 +87,95 @@ int wait_thread() {
 }
 
 
-
-
-void __do_zip() {
-	struct thread_args *args = malloc(sizeof(struct thread_args));
-	// make a copy of array
-	args->array = fbuffer_dup(fBuffer);
-
-	// fork zipper()
-	zipfile_idx++;
-	sprintf(args->zipfile  , zip_filename, zipfile_idx);	
-
-	int idx = wait_thread();
-	printf("start thread idx: %d", idx+1);
-	pthread_create(&threads[idx], NULL, (void*)(void*)pt_zipper, args);
-	printf(" (%ld) - %s\n", (long)threads[idx], args->zipfile);
+struct cleanup_handler_args {
+	pthread_t 	thread_id;	
+	fBuffer_t 	*array;
+};
+static void pt_cleanup_handler(void *p) {
+	struct cleanup_handler_args *args = (struct cleanup_handler_args *)p;
+	#ifdef DEBUG
+		printf("  >>> exit_thread(%ld, ...)\n", (long)args->thread_id);
+	#endif /* DEBUG */
+	fbuffer_free(args->array);
 }
+
+void* pt_zipper(void *p) {
+	struct thread_args *args = (struct thread_args *)p;
+	
+	struct cleanup_handler_args cleanup_args;
+	cleanup_args.array = args->array;
+	cleanup_args.thread_id = pthread_self();
+	pthread_cleanup_push(pt_cleanup_handler, &cleanup_args);
+	
+	int error;
+	zip_t *zip = zip_open(args->zipfile, ZIP_CREATE | ZIP_EXCL, &error);
+	if (zip == NULL) {
+		zip_error_t ziperror;
+		zip_error_init_with_code(&ziperror, error);
+		fprintf(stderr, "Failed to open output file %s: %s\n", args->zipfile, zip_error_strerror(&ziperror));
+		exit(3);
+	}
+
+	char *name;
+	zip_int64_t id;
+	fBuffer_t *ptr = args->array;
+	fBuffer_t *p;
+	while (ptr) {
+		p = ptr;
+		ptr = ptr->_next;
+		name = &p->path[depth_len];
+	
+		if (name[0] == '/') name++; /* stripp absolute path spec from name */
+
+		/* add directory... */
+		if (S_ISDIR(p->st_mode)) {
+			id = zip_dir_add(zip, name, ZIP_FL_ENC_UTF_8);
+			if (id < 0) {
+				fprintf(stderr, "Failed to add directory %s to zip: %s\n", name, zip_strerror(zip));
+				exit(4);
+			}
+			continue;
+	   	}	
+			
+		/* add file... */
+		#ifdef DEBUG
+			fprintf(stderr, "DEBUG: zip: %s, file: %s\n", args->zipfile, p->path);
+		#endif /* DEBUG */
+		zip_source_t *source = zip_source_file(zip, p->path, 0, 0);
+		if (source == NULL) {
+			fprintf(stderr, "Failed to open file %s: %s\n", p->path, zip_strerror(zip));
+			exit(3);
+		}
+
+		id = zip_file_add(zip, name, source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8); 
+		if (id < 0) {
+			zip_source_free(source);
+			fprintf(stderr, "Failed to add file %s to zip: %s\n", name, zip_strerror(zip));
+			exit(4);
+		} 
+
+		if (zip_set_file_compression(zip, id, ZIP_CM_STORE, 0) < 0) {
+			fprintf(stderr, "Failed to set compressions flag for file %s: %s\n", name, zip_strerror(zip));
+			exit(5);
+		}
+	}
+	if (zip_close(zip) < 0) {
+		zip_error_t *ziperror = zip_get_error(zip);
+		fprintf(stderr, "Failed to write output file %s: %s\n", args->zipfile, zip_error_strerror(ziperror));
+		exit(1);
+	}
+
+
+	pthread_exit(NULL);
+	pthread_cleanup_pop(1);
+	return NULL;
+}
+
 
 void do_zip() {
 	struct thread_args *args = malloc(sizeof(struct thread_args));
 
-	args->array = fBuffer;
+	args->array = pfBuffer;
 
 	zipfile_idx++;
 	sprintf(args->zipfile  , zip_filename, zipfile_idx);	
@@ -229,23 +200,38 @@ void add_file_cb(char* fname, mode_t st_mode, off_t st_size) {
 		#endif
 		exit(6);
 	}
+
 	
 	#ifdef DEBUG
-		fprintf(stderr, "DEBUG: add_file_cb: %s, (%s)\n", fname, S_ISDIR(st_mode) ? "Directory" : "File");
+	fprintf(stderr, "DEBUG: add_file_cb: %s, (%s)\n", fname, S_ISDIR(st_mode) ? "Directory" : "File");
 	#endif /* DEBUG */
-	if (total_size + st_size >= max_size || fBuffer_next - fBuffer == max_files) {
+	if ((max_size > 0 && total_size + st_size >= max_size) || (max_files > 0 && total_files >= max_files)) {
+		#ifdef DEBUG
+			fprintf(stderr, "DEBUG: add_file_cb: >max_size/total_size  : %ld/%ld\n", max_size, total_size);
+	   		fprintf(stderr, "DEBUG: add_file_cb: >max_files/total_files: %d/%d\n", max_files, total_files);
+		#endif /* DEBUG */
 		do_zip();
-		//fbuffer_clear(fBuffer);
-		fBuffer = fbuffer_new(max_files);
-		fBuffer_next = fBuffer;
+		pfBuffer = NULL;
+		pfBuffer_last = pfBuffer;
+		total_files = 0;
 		total_size = 0;
 	}
 
-	fBuffer_next->path = strdup(fname);
-	fBuffer_next->st_mode = st_mode;
-	fBuffer_next->st_size = st_size;
-	fBuffer_next++;
-	total_size += st_size;
+	if (pfBuffer == NULL) {
+		pfBuffer = fbuffer_new();
+		pfBuffer_last = pfBuffer;
+	}
+	else
+	{
+		pfBuffer_last = fbuffer_append(pfBuffer_last);
+	}
+	pfBuffer_last->path = strdup(fname);
+	pfBuffer_last->st_mode = st_mode;
+	pfBuffer_last->st_size = st_size;
+	if (!S_ISDIR(st_mode)) {
+		total_files++;
+		total_size += st_size;
+	}
 }
 
 
@@ -254,7 +240,6 @@ void usage(char* prog, int exitcode) {
 		"usage: %s Options DIRECTORY [DIRECTORY ...]\n\n"
 		"Options:\n"
 		"  -c MAX_FILES   Set max files for zip archives\n"
-		"                 Default: %d\n"
 		"  -j THREADS     Max threads\n"
 		"                 Default: %d\n"
 		"  -k             keep DIRECTORY name in zip file\n"
@@ -265,7 +250,7 @@ void usage(char* prog, int exitcode) {
 		"                 e.g.: -s 52428800 -> = 50M\n"
 		"                 -s 25G, -s 100M...\n"
 		"                 Default: %s\n"
-		, prog, MAX_FILES, MAX_THREADS, size2str(MAX_SIZE,0)
+		, prog, MAX_THREADS, size2str(MAX_SIZE,0)
 	);
 	exit(exitcode);
 }
@@ -308,14 +293,10 @@ int main(int argc, char* argv[]) {
 	}
 
 	/* ---------------------------------------------------------------- */
-
-	/* init fBuffer & fBuffer_next pointer */
-	fBuffer = fbuffer_new(max_files);
-   	fBuffer_next = fBuffer;
+	pfBuffer = NULL;	
 
 	/* init threads */
 	threads = calloc(max_threads, sizeof(pthread_t));
-
 
 	/* ... */
 	char resolved_path[PATH_MAX];
@@ -333,10 +314,7 @@ int main(int argc, char* argv[]) {
 
 		dir_walker(resolved_path, (void(*)())add_file_cb, (void(*)())add_file_cb);
 	}
-
-	if (fBuffer != fBuffer_next) {
-		do_zip();
-	}
+	if (pfBuffer) do_zip();
 
 	/* wait for threads */
 	int count;
@@ -357,8 +335,6 @@ int main(int argc, char* argv[]) {
 		else printf("...finish");
 		printf("\n");
 	} while (count > 0);
-
-	//fbuffer_free(fBuffer);
 
 	return 0;
 }

@@ -23,51 +23,45 @@
 
 #include "fbuffer.h"
 
-/* Return count (reserved) entries in array */
+/* Return count entries in array */
 fBuffer_len_t fbuffer_len(fBuffer_t *p) {
-    return malloc_usable_size(p) / sizeof(fBuffer_t);
-	//return malloc_size(p) / sizeof(fBuffer_t);
-} 
+	fBuffer_len_t count = 0;
+	fBuffer_t *ptr=p;
+	while (ptr) {
+		count++;
+		ptr = ptr->_next;
+	}
+	return count;
+}
 
-/*  allocate memory */
-fBuffer_t *fbuffer_new(fBuffer_len_t count) {
-    //return (fBuffer_t*)malloc(count * sizeof(fBuffer_t));
-    return calloc(count, sizeof(fBuffer_t));
+/*  allocate memory for new entry ... */
+fBuffer_t *fbuffer_new() {
+	return (fBuffer_t*)calloc(1, sizeof(fBuffer_t));
+}
+
+/* add entry and return pointer to new entry */
+fBuffer_t *fbuffer_append(fBuffer_t *p_last) {
+	p_last->_next = fbuffer_new();
+	return p_last->_next;
+}
+
+/* add entry at first position and return pointer to new start position */
+fBuffer_t *fbuffer_insert(fBuffer_t *p) {
+	fBuffer_t *pnew = fbuffer_new();
+    pnew->_next = p;
+    return pnew;
 }
 
 /* free allocated memory */
 void fbuffer_free(fBuffer_t *p) {
-    fBuffer_len_t len = fbuffer_len(p);
-    for (fBuffer_len_t i=0; i < len-1; i++) {
-        if (p[i].path != NULL) free(p[i].path);
+    fBuffer_t *psave, *ptr=p;
+    while (ptr) {
+		//if (p[i].path != NULL) free(p[i].path);
+		if (ptr->path) free(ptr->path);
+        psave = ptr;
+		ptr = ptr->_next;
+		free(psave);
     }
-    free(p);
-}
-
-/* free all allocated memory for char *path...  */
-void fbuffer_clear(fBuffer_t *p) {
-    fBuffer_len_t len = fbuffer_len(p);
-    for (fBuffer_len_t i=0; i < len-1; i++) {
-        if (p[i].path != NULL) free(p[i].path);
-    }
-	memset(p, 0, len * sizeof(fBuffer_t));
-}
-
-/* allocate memory and return a copy of p */
-/* only copy data with p[i].path != NULL   */
-fBuffer_t *fbuffer_dup(fBuffer_t *p) {
-	fBuffer_len_t len = fbuffer_len(p);
-
-	fBuffer_t *pnew = fbuffer_new(len);
-
-	for (fBuffer_len_t i=0; i < len-1; i++) {
-        if (p[i].path != NULL) {
-			pnew[i].path = strdup(p[i].path);
-			pnew[i].st_mode = p[i].st_mode;
-			pnew[i].st_size = p[i].st_size;
-		}
-    }
-	return pnew;
 }
 
 /*
