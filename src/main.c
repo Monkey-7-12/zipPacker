@@ -43,6 +43,7 @@ static int      max_files = 0;			// Max files per zip file
 static uint64_t max_size  = MAX_SIZE;	// Max size per zip file
 
 /* zip name control */
+static int  skip_dot_files = 0;		// don't archive dot-files (-x)
 static long depth_len = 0;		  	// count character do delete from input filename
 static char *zip_filename = NULL;	// output filename (format mask)
 
@@ -190,7 +191,7 @@ void do_zip() {
 /* add_file_cb callback */
 void add_file_cb(char* fname, mode_t st_mode, off_t st_size) {
 	//printf("add_file_cb: %s, %ld\n", fname, st_size);
-
+	
 	if (st_size < 0) {
 		// TODO / FIXME 
 		#ifdef __linux__
@@ -242,7 +243,8 @@ void usage(char* prog, int exitcode) {
 		"  -c MAX_FILES   Set max files for zip archives\n"
 		"  -j THREADS     Max threads\n"
 		"                 Default: %d\n"
-		"  -k             keep DIRECTORY name in zip file\n"
+		"  -k             keep (last)DIRECTORY name in zip file\n"
+		"  -x             don't archive dot-files (/.*)\n"
 		"  -o FILENAME    Output zip-filename format string\n"
 		"                 e.g.: /tmp/test_%%03d.zip\n"
 		"                 -> /tmp/test_001.zip, /tmp/test_002.zip...\n"
@@ -260,7 +262,7 @@ int main(int argc, char* argv[]) {
 	int opt; 
 	int keep = 0;
  
-	while((opt = getopt(argc, argv, ":c:j:kho:s:")) != -1)  
+	while((opt = getopt(argc, argv, ":c:j:kxho:s:")) != -1)  
 	{  
 		switch(opt)  
 		{  
@@ -269,6 +271,8 @@ int main(int argc, char* argv[]) {
 			case 'j':	max_threads = strtol(optarg, NULL, 0);
 						break;
 			case 'k':	keep = 1;
+						break;
+			case 'x':	skip_dot_files = 1;
 						break;
 			case 'h':	usage(argv[0], 0);
 						break;
@@ -312,7 +316,7 @@ int main(int argc, char* argv[]) {
 			depth_len = ptr - resolved_path;
 		}
 
-		dir_walker(resolved_path, (void(*)())add_file_cb, (void(*)())add_file_cb);
+		dir_walker(resolved_path, skip_dot_files, (void(*)())add_file_cb, (void(*)())add_file_cb);
 	}
 	if (pfBuffer) do_zip();
 

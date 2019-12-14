@@ -15,7 +15,7 @@
 #ifndef DIRWALK_H
 #define DIRWALK_H
 
-extern void dir_walker(char* name, void (*f_callback)(), void (*d_callback)());
+extern void dir_walker(char* name, int skip_dot, void (*f_callback)(), void (*d_callback)());
 
 #endif /* DIRWALK_H */
 

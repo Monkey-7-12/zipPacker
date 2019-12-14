@@ -26,7 +26,7 @@
 #endif
 
 
-void dir_walker(char* name, void (*f_callback)(), void (*d_callback)()) {
+void dir_walker(char* name, int skip_dot, void (*f_callback)(), void (*d_callback)()) {
 	DIR *dir;
 	struct dirent *entry;
 	struct stat statbuf;
@@ -47,12 +47,16 @@ void dir_walker(char* name, void (*f_callback)(), void (*d_callback)()) {
 			continue;
 		}
 		
+		// skip dot files ?
+		if ( skip_dot && entry->d_name[0] == '.' ) continue;
+
+		// is dir/file ...
 		if (S_ISDIR(statbuf.st_mode)) {
 			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 				continue;
 			//snprintf(path, PATH_MAX, "%s/%s", name, entry->d_name);
 			if (d_callback != NULL) (*d_callback)(path, statbuf.st_mode, statbuf.st_size);
-			dir_walker(path, f_callback, d_callback);
+			dir_walker(path, skip_dot, f_callback, d_callback);
 		} else {
 			//snprintf(path, PATH_MAX, "%s/%s", name, entry->d_name);
 			if (f_callback != NULL) (*f_callback)(path, statbuf.st_mode, statbuf.st_size);
